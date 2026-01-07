@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h1 class="text-3xl font-semibold mb-6">Campaign Builder</h1>
+
+<form hx-post="/run_campaign" hx-target="#results" class="flex gap-4 mb-6">
+    <input name="budget" type="number" placeholder="Budget"
+           class="border p-2 rounded" value="5000">
+
+    <input name="cost" type="number" placeholder="Cost per Action"
+           class="border p-2 rounded" value="20">
+
+    <button class="bg-blue-600 text-white px-4 py-2 rounded">Run Optimization</button>
+</form>
+
+<div id="results" class="bg-white p-4 shadow rounded">
+    <!-- optimizer output will load here -->
+</div>
+
+{% endblock %}

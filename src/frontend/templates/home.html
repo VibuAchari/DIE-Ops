@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="text-3xl font-semibold mb-4">Overview Dashboard</h1>
+
+<div class="grid grid-cols-3 gap-4">
+
+    <div class="bg-white p-4 shadow rounded">
+        <h2 class="text-lg font-bold">Total Customers</h2>
+        <p class="text-2xl">4000</p>
+    </div>
+
+    <div class="bg-white p-4 shadow rounded">
+        <h2 class="text-lg font-bold">Avg CLTV</h2>
+        <p class="text-2xl">₹{{ 2500 }}</p>
+    </div>
+
+    <div class="bg-white p-4 shadow rounded">
+        <h2 class="text-lg font-bold">Churn Rate</h2>
+        <p class="text-2xl">~22%</p>
+    </div>
+
+</div>
+
+<p class="mt-6 text-gray-600">
+    This overview panel will later include charts:
+    - CLTV distribution  
+    - Churn vs tenure  
+    - Uplift efficiency  
+    - Segment heatmaps  
+</p>
+
+{% endblock %}

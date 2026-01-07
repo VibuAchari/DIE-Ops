@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h1 class="text-3xl font-semibold mb-6">Reports</h1>
+
+<ul class="space-y-2">
+{% for f in files %}
+    <li>
+        <a href="/output/{{ f }}" class="text-blue-600 underline" target="_blank">{{ f }}</a>
+    </li>
+{% endfor %}
+</ul>
+
+{% endblock %}
