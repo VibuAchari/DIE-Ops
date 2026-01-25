@@ -1,0 +1,56 @@
+# DIE-Ops Docker Compose Configuration
+# Run from project root: docker-compose -f docker/docker-compose.yml up --build
+
+services:
+  # FastAPI Backend Service
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: dieops-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENV=production
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - dieops-network
+
+  # React Frontend Service
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/frontend/Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:8000
+    container_name: dieops-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - dieops-network
+
+networks:
+  dieops-network:
+    driver: bridge
+
+# Optional: Add volumes for persistent data
+# volumes:
+#   backend-data:
+#     driver: local
