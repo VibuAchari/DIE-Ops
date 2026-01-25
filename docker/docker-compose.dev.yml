@@ -1,0 +1,45 @@
+# DIE-Ops Docker Development Compose
+# For local development with hot reloading
+# Run from project root: docker-compose -f docker/docker-compose.dev.yml up
+
+services:
+  # FastAPI Backend with hot reload
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: dieops-backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENV=development
+    volumes:
+      - ../backend:/app
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    networks:
+      - dieops-network
+
+  # React Frontend with Vite dev server
+  frontend:
+    image: node:20-alpine
+    container_name: dieops-frontend-dev
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - dieops-network
+
+networks:
+  dieops-network:
+    driver: bridge

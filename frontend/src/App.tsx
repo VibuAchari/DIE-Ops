@@ -5,6 +5,7 @@ import { AdminPanel } from './components/AdminPanel';
 import { CustomerSearch } from './components/CustomerSearch';
 import { CampaignBuilder } from './components/CampaignBuilder';
 import { Reports } from './components/Reports';
+import { Footer } from './components/Footer';
 import { getSimulation } from './api';
 
 function App() {
@@ -33,18 +34,17 @@ function App() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0f172a' }}>
+    <div style={{ minHeight: '100vh', background: '#0f172a', display: 'flex', flexDirection: 'column' }}>
       <Navbar active={activePage} onNavigate={setActivePage} />
 
-      <main style={{ maxWidth: '1000px', margin: '0 auto', padding: '0 2rem 2rem' }}>
+      <main style={{ maxWidth: '1000px', margin: '0 auto', padding: '0 2rem 2rem', flex: 1 }}>
         {renderPage()}
       </main>
 
-      <footer className="mt-8 text-sm text-center" style={{ opacity: 0.5, paddingBottom: '2rem' }}>
-        DIE-Ops v2.0 • Powered by FastAPI + React • 2026
-      </footer>
+      <Footer />
     </div>
   );
 }
 
 export default App;
+

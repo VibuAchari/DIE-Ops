@@ -11,6 +11,88 @@ This project reflects how real-world enterprises operationalize AI to drive meas
 
 ---
 
+## 🚀 One-Click Deploy
+
+Deploy DIE-Ops instantly to the cloud with these one-click buttons:
+
+### Full Stack on Railway (Recommended)
+Deploy both backend and frontend together on Railway:
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/blacklovertech/DIE-Ops)
+
+### Backend Only on Railway
+Deploy just the FastAPI backend service:
+
+[![Deploy Backend on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/blacklovertech/DIE-Ops&rootDir=backend)
+
+### Frontend on Vercel
+Deploy the React frontend to Vercel:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/blacklovertech/DIE-Ops&root-directory=frontend)
+
+### Frontend on Railway
+Alternatively, deploy the frontend to Railway:
+
+[![Deploy Frontend on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/blacklovertech/DIE-Ops&rootDir=frontend)
+
+> **Note:** After deploying, update the frontend's `VITE_API_URL` environment variable to point to your deployed backend URL.
+
+---
+
+## 🐳 Docker Deployment
+
+Run DIE-Ops anywhere with Docker Compose:
+
+### Quick Start
+```bash
+# Clone the repository
+git clone https://github.com/blacklovertech/DIE-Ops.git
+cd DIE-Ops
+
+# Build and run the entire stack (production)
+docker-compose -f docker/docker-compose.yml up --build
+
+# Or run in development mode with hot reload
+docker-compose -f docker/docker-compose.dev.yml up
+```
+
+### Access the Application
+| Service | Production | Development |
+|---------|------------|-------------|
+| **Frontend** | http://localhost:3000 | http://localhost:5173 |
+| **Backend API** | http://localhost:8000 | http://localhost:8000 |
+| **API Docs** | http://localhost:8000/docs | http://localhost:8000/docs |
+
+### Docker Commands
+```bash
+# Run in detached mode (background)
+docker-compose -f docker/docker-compose.yml up -d --build
+
+# View logs
+docker-compose -f docker/docker-compose.yml logs -f
+
+# Stop all services
+docker-compose -f docker/docker-compose.yml down
+
+# Rebuild a specific service
+docker-compose -f docker/docker-compose.yml up --build backend
+
+docker-compose -f docker/docker-compose.yml up --build frontend
+
+```
+
+### Docker Folder Structure
+```
+docker/
+├── backend/Dockerfile      # FastAPI backend
+├── frontend/Dockerfile     # React frontend (multi-stage)
+├── docker-compose.yml      # Production config
+├── docker-compose.dev.yml  # Development with hot reload
+└── README.md               # Docker documentation
+```
+
+---
+
 ## The Problem This Project Solves
 Most organizations already have churn models, customer segmentation, and dashboards. Yet they still struggle to answer basic operational questions:
 * Which customers should we target right now?
