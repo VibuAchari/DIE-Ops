@@ -18,22 +18,22 @@ Deploy DIE-Ops instantly to the cloud with these one-click buttons:
 ### Full Stack on Railway (Recommended)
 Deploy both backend and frontend together on Railway:
 
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/blacklovertech/DIE-Ops)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/VibuAchari/DIE-Ops)
 
 ### Backend Only on Railway
 Deploy just the FastAPI backend service:
 
-[![Deploy Backend on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/blacklovertech/DIE-Ops&rootDir=backend)
+[![Deploy Backend on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/VibuAchari/DIE-Ops&rootDir=backend)
 
 ### Frontend on Vercel
 Deploy the React frontend to Vercel:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/blacklovertech/DIE-Ops&root-directory=frontend)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/VibuAchari/DIE-Ops&root-directory=frontend)
 
 ### Frontend on Railway
 Alternatively, deploy the frontend to Railway:
 
-[![Deploy Frontend on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/blacklovertech/DIE-Ops&rootDir=frontend)
+[![Deploy Frontend on Railway](https://railway.com/button.svg)](https://railway.com/template/new?template=https://github.com/VibuAchari/DIE-Ops&rootDir=frontend)
 
 > **Note:** After deploying, update the frontend's `VITE_API_URL` environment variable to point to your deployed backend URL.
 
@@ -46,7 +46,7 @@ Run DIE-Ops anywhere with Docker Compose:
 ### Quick Start
 ```bash
 # Clone the repository
-git clone https://github.com/blacklovertech/DIE-Ops.git
+git clone https://github.com/VibuAchari/DIE-Ops.git
 cd DIE-Ops
 
 # Build and run the entire stack (production)
