@@ -1,86 +1,119 @@
-# src/decision_engine/optimizer.py
 """
-ROI-aware optimizer for campaign selection.
+src/decision_engine/optimizer.py
 
-Key logic:
- - compute expected_gain = uplift * cltv * margin
- - filter customers where expected_gain > cost (simple profitability gate)
- - compute ROI = expected_gain / cost
- - greedy-select highest ROI until budget exhausted
- - produce CSV of selected recipients and return summary KPIs
+Enterprise ROI Optimizer for Campaign Target Selection
 
-This replaces the previous greedy_select and provides actionable outputs for reporting.
+Core logic:
+- expected_gain = churn_prob * uplift * cltv * margin
+- net_profit    = expected_gain - cost
+- select highest net_profit customers under budget
+
+Maximizes business impact, not probability scores.
 """
+
 import pandas as pd
-import numpy as np
 import os
 from typing import Tuple, Dict
 
-def compute_expected_gain(df: pd.DataFrame, margin: float) -> pd.DataFrame:
+
+# ------------------------------------------------------------
+def score_candidates(df: pd.DataFrame, margin: float) -> pd.DataFrame:
     """
-    Expects df with columns: 'customer_id', 'uplift' (absolute prob uplift), 'cltv', 'cost'
-    Adds 'expected_gain' and 'roi' columns and returns df copy.
+    Adds decision economics if missing.
+
+    Required columns:
+    - customer_id
+    - uplift
+    - cltv
+    - cost
+
+    Optional:
+    - churn_prob
+    - expected_gain (if already computed upstream)
     """
+
     df = df.copy()
-    df["expected_gain"] = df["uplift"] * df["cltv"] * margin
-    # avoid division by zero
-    df["roi"] = df["expected_gain"] / df["cost"].replace(0, 1e-9)
+
+    # If expected_gain not provided, compute it
+    if "expected_gain" not in df.columns:
+
+        churn_factor = df["churn_prob"] if "churn_prob" in df.columns else 1.0
+
+        df["expected_gain"] = (
+            churn_factor *
+            df["uplift"] *
+            df["cltv"] *
+            margin
+        )
+
+    # Net profit
+    df["net_profit"] = df["expected_gain"] - df["cost"]
+
     return df
 
-def roi_select(df: pd.DataFrame, budget: float, margin: float = 0.30,
-               min_profit_threshold: float = 0.0, export_csv: str = None
-               ) -> Tuple[pd.DataFrame, Dict]:
+
+# ------------------------------------------------------------
+def roi_select(
+    df: pd.DataFrame,
+    budget: float,
+    margin: float = 0.30,
+    min_profit_threshold: float = 0.0,
+    export_csv: str = None
+) -> Tuple[pd.DataFrame, Dict]:
     """
-    Select customers under budget using ROI sorting, with a profitability gate.
+    Campaign target selection under budget.
 
-    Parameters:
-    - df: DataFrame with customer_id, uplift, cltv, cost
-    - budget: total available budget (monetary)
-    - margin: gross margin used to compute expected gain
-    - min_profit_threshold: minimal expected_gain - cost required to consider a customer
-    - export_csv: optional path to save selected recipients
-
-    Returns:
-    - selected_df: DataFrame of selected recipients with calculated fields
-    - summary: dict with KPIs (selected_count, spent, expected_total_gain, avg_roi, avg_cost)
+    Steps:
+    - compute expected gain + net profit
+    - drop unprofitable customers
+    - rank by net_profit descending
+    - greedy pick until budget exhausted
     """
-    assert {"customer_id", "uplift", "cltv", "cost"}.issubset(set(df.columns)), "Required columns missing"
 
-    # compute gains & roi
-    scored = compute_expected_gain(df, margin)
+    required = {"customer_id", "uplift", "cltv", "cost"}
+    if not required.issubset(df.columns):
+        raise ValueError(f"Missing required columns: {required - set(df.columns)}")
 
-    # profitability gate: expected gain must exceed cost + threshold
-    scored["net_profit"] = scored["expected_gain"] - scored["cost"]
-    scored = scored[scored["net_profit"] >= min_profit_threshold]
+    # Score economics
+    scored = score_candidates(df, margin)
 
-    # sort by ROI descending; tie-break by expected_gain
-    scored = scored.sort_values(by=["roi", "expected_gain"], ascending=[False, False])
+    # Profitability gate
+    scored = scored[scored["net_profit"] > min_profit_threshold]
 
-    selected_rows = []
+    # Sort by impact
+    scored = scored.sort_values("net_profit", ascending=False)
+
+    # Greedy budget allocation
+    selected = []
     spent = 0.0
-    for _, r in scored.iterrows():
-        cost = float(r["cost"])
-        if (spent + cost) <= float(budget):
-            selected_rows.append(r)
+
+    for _, row in scored.iterrows():
+        cost = float(row["cost"])
+        if spent + cost <= budget:
+            selected.append(row)
             spent += cost
-        else:
-            continue
 
-    if len(selected_rows) == 0:
-        return pd.DataFrame(), {"selected_count": 0, "spent": 0.0, "expected_total_gain": 0.0}
+    if not selected:
+        return pd.DataFrame(), {
+            "selected_count": 0,
+            "spent": 0.0,
+            "expected_total_gain": 0.0,
+            "expected_total_profit": 0.0
+        }
 
-    selected_df = pd.DataFrame(selected_rows).reset_index(drop=True)
+    selected_df = pd.DataFrame(selected).reset_index(drop=True)
 
     summary = {
         "selected_count": int(len(selected_df)),
         "spent": float(spent),
         "expected_total_gain": float(selected_df["expected_gain"].sum()),
-        "avg_roi": float(selected_df["roi"].mean()),
-        "avg_cost": float(selected_df["cost"].mean())
+        "expected_total_profit": float(selected_df["net_profit"].sum()),
+        "avg_profit_per_customer": float(selected_df["net_profit"].mean())
     }
 
-    # export CSV for marketing ops if requested
+    # Optional export
     if export_csv:
         os.makedirs(os.path.dirname(export_csv) or ".", exist_ok=True)
         selected_df.to_csv(export_csv, index=False)
+
     return selected_df, summary

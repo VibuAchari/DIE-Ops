@@ -1,11 +1,18 @@
 """
-DIE-Ops Modern FastAPI Backend
-Exposes:
- - POST /score/customer
- - POST /score/batch
- - POST /recommend
- - GET  /simulate
-Cleaned & aligned to the updated model architecture.
+src/api/main.py
+
+DIE-Ops Customer Intelligence API (Enterprise-Stable)
+
+Core signals:
+- churn_prob → risk of leaving
+- uplift     → churn reduction if treated
+- cltv_raw   → monetary value
+- optimizer  → selects best retention actions under budget
+
+Endpoints:
+- POST /score/customer
+- POST /recommend
+- GET  /simulate
 """
 
 import os
@@ -13,7 +20,12 @@ import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List
+
+from src.ingest.ingest import load_df
+from src.features.featurize import featurize_for_churn, featurize_for_uplift
+from src.decision_engine.optimizer import roi_select
+from src.decision_engine.actions import build_action_candidates
+
 
 # ------------------------------------------------------------
 # Paths
@@ -25,172 +37,176 @@ CHURN_MODEL_PATH = os.path.join(MODEL_DIR, "churn_model.pkl")
 CHURN_FEATURES_PATH = os.path.join(MODEL_DIR, "churn_features.pkl")
 
 UPLIFT_PATH = os.path.join(MODEL_DIR, "uplift_models.pkl")
+CLTV_TABLE_PATH = os.path.join(MODEL_DIR, "cltv_table.csv")
 
-CLTV_ARTIFACTS_PATH = os.path.join(MODEL_DIR, "cltv_artifacts.pkl")
-
-DATA_PATH = os.path.join(ROOT, "data", "sample_customers.csv")
 
 # ------------------------------------------------------------
-# Local imports AFTER sys.path is correct
+# FastAPI App
 # ------------------------------------------------------------
-from src.features.featurize import featurize_for_scoring
-from src.decision_engine.optimizer import roi_select
-
-
 app = FastAPI(title="DIE-Ops Customer Intelligence API")
 
 
 # ------------------------------------------------------------
-# Pydantic Input Models
+# Schemas
 # ------------------------------------------------------------
-class CustomerScoreRequest(BaseModel):
+class CustomerRequest(BaseModel):
     customer_id: int
 
 
-class RecommendPayload(BaseModel):
+class RecommendRequest(BaseModel):
     budget: float = 5000.0
-    cost_per_action: float = 20.0
     margin: float = 0.30
 
 
 # ------------------------------------------------------------
-# Load models on startup
+# Startup Load
 # ------------------------------------------------------------
 @app.on_event("startup")
-def load_models():
+def load_artifacts():
+    """
+    Load dataset + models once at startup.
+    """
     global churn_model, churn_features
-    global treat_model, control_model, uplift_features
-    global cltv_bgf, cltv_ggf, cltv_scaler
-    global df_full
+    global treat_model, control_model
+    global cltv_table, df_full
 
-    # Base dataset
-    df_full = pd.read_csv(DATA_PATH)
+    print("[api] loading dataset...")
+    df_full = load_df()
 
-    # Churn
+    print("[api] loading churn model...")
     churn_model = joblib.load(CHURN_MODEL_PATH)
+
+    # ✅ Enforce churn feature schema
     churn_features = joblib.load(CHURN_FEATURES_PATH)
 
-    # Uplift
+    print("[api] loading uplift models...")
     uplift = joblib.load(UPLIFT_PATH)
     treat_model = uplift["model_t"]
     control_model = uplift["model_c"]
-    uplift_features = uplift["features"]
 
-    # CLTV artifacts
-    cltv = joblib.load(CLTV_ARTIFACTS_PATH)
-    cltv_bgf = cltv["bgf"]
-    cltv_ggf = cltv["ggf"]
-    cltv_scaler = cltv["scaler"]
+    print("[api] loading CLTV table...")
+    cltv_table = pd.read_csv(CLTV_TABLE_PATH)
+
+    print("[api] startup complete ✅")
 
 
 # ------------------------------------------------------------
-# Internal scoring util
+# CLTV Lookup
 # ------------------------------------------------------------
-def score_dataframe(df: pd.DataFrame):
-    """
-    Scores churn, uplift, CLTV for a given dataframe
-    Returns the same df with new columns:
-    - churn_prob
-    - uplift
-    - cltv
-    """
-    # Churn
-    X = featurize_for_scoring(df, churn_features)
-    df["churn_prob"] = churn_model.predict_proba(X)[:, 1]
-
-    # Uplift
-    X_u = featurize_for_scoring(df, uplift_features)
-    p_t = treat_model.predict_proba(X_u)[:, 1]
-    p_c = control_model.predict_proba(X_u)[:, 1]
-    df["uplift"] = p_t - p_c
-
-    # CLTV
-    cltv_vals = cltv_ggf.customer_lifetime_value(
-        cltv_bgf,
-        df["frequency"],
-        df["recency_days"],
-        df["tenure_days"],
-        df["monetary"],
-        time=12,    # 12 months projection
-        freq="D",
-        discount_rate=0.01
-    )
-    df["cltv"] = cltv_scaler.transform(cltv_vals.values.reshape(-1, 1))
-
-    return df
+def lookup_cltv(customer_id: int) -> float:
+    row = cltv_table[cltv_table["customer_id"] == customer_id]
+    if row.empty:
+        return 2000.0
+    return float(row.iloc[0]["cltv_raw"])
 
 
 # ------------------------------------------------------------
-# Single customer scoring
+# Endpoint: Score Customer
 # ------------------------------------------------------------
 @app.post("/score/customer")
-def score_customer(req: CustomerScoreRequest):
+def score_customer(req: CustomerRequest):
+
     df = df_full[df_full["customer_id"] == req.customer_id].copy()
     if df.empty:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    df = score_dataframe(df)
+    # ---- churn ----
+    X_churn, _ = featurize_for_churn(df)
 
-    row = df.iloc[0]
+    # ✅ Align with training schema
+    X_churn = X_churn[churn_features]
+
+    churn_prob = float(churn_model.predict_proba(X_churn)[:, 1][0])
+
+    # ---- uplift ----
+    X_uplift, _ = featurize_for_uplift(df)
+
+    p_t = float(treat_model.predict_proba(X_uplift)[:, 1][0])
+    p_c = float(control_model.predict_proba(X_uplift)[:, 1][0])
+
+    uplift = p_c - p_t
+
+    # ---- cltv ----
+    cltv_raw = lookup_cltv(req.customer_id)
+
     return {
-        "customer_id": int(row["customer_id"]),
-        "churn_prob": float(row["churn_prob"]),
-        "uplift": float(row["uplift"]),
-        "cltv": float(row["cltv"]),
+        "customer_id": req.customer_id,
+        "churn_prob": churn_prob,
+        "uplift": uplift,
+        "cltv_raw": cltv_raw
     }
 
 
 # ------------------------------------------------------------
-# Batch scoring
-# ------------------------------------------------------------
-@app.post("/score/batch")
-def score_batch():
-    df = df_full.copy()
-    df = score_dataframe(df)
-    return df[["customer_id", "churn_prob", "uplift", "cltv"]].to_dict(orient="records")
-
-
-# ------------------------------------------------------------
-# Recommendation Engine API
+# Endpoint: Recommend Campaign Actions
 # ------------------------------------------------------------
 @app.post("/recommend")
-def recommend(payload: RecommendPayload):
+def recommend(req: RecommendRequest):
 
-    # score entire dataset
-    df = score_dataframe(df_full.copy())
+    df = df_full.copy()
 
-    # build decision frame
-    dec = df[["customer_id", "uplift", "cltv"]].copy()
-    dec["cost"] = payload.cost_per_action
+    # ---- churn scoring ----
+    X_churn, _ = featurize_for_churn(df)
+    X_churn = X_churn[churn_features]
 
+    df["churn_prob"] = churn_model.predict_proba(X_churn)[:, 1]
+
+    # ---- uplift scoring ----
+    X_uplift, _ = featurize_for_uplift(df)
+
+    p_t = treat_model.predict_proba(X_uplift)[:, 1]
+    p_c = control_model.predict_proba(X_uplift)[:, 1]
+
+    df["uplift"] = p_c - p_t
+
+    # ---- attach CLTV ----
+    df = df.merge(
+        cltv_table[["customer_id", "cltv_raw"]],
+        on="customer_id",
+        how="left"
+    )
+    df["cltv_raw"] = df["cltv_raw"].fillna(2000)
+
+    # --------------------------------------------------------
+    # Action Expansion
+    # --------------------------------------------------------
+    candidates = build_action_candidates(df, margin=req.margin)
+
+    if candidates.empty:
+        return {"summary": {"selected_count": 0}, "selected_customers": []}
+
+    # --------------------------------------------------------
+    # ✅ One Best Offer Per Customer (SAFE selection)
+    # --------------------------------------------------------
+    best_idx = candidates.groupby("customer_id")["net_profit"].idxmax()
+    candidates = candidates.loc[best_idx].reset_index(drop=True)
+
+    # --------------------------------------------------------
+    # ✅ ROI Efficiency Ranking (profit per rupee spent)
+    # --------------------------------------------------------
+    candidates["roi_ratio"] = candidates["net_profit"] / candidates["cost"]
+
+    candidates = candidates.sort_values("roi_ratio", ascending=False)
+
+    # --------------------------------------------------------
+    # Budget Optimizer
+    # --------------------------------------------------------
     selected_df, summary = roi_select(
-        dec,
-        budget=payload.budget,
-        margin=payload.margin,
-        min_profit_threshold=0.0
+        candidates,
+        budget=req.budget,
+        margin=req.margin
     )
 
     return {
         "summary": summary,
-        "selected": selected_df.head(200).to_dict(orient="records")
+        "selected_customers": selected_df.head(200).to_dict(orient="records")
     }
 
 
 # ------------------------------------------------------------
-# Simulation endpoint
+# Simulation Endpoint
 # ------------------------------------------------------------
 @app.get("/simulate")
-def simulate(budget: float = 5000, cost: float = 20.0, margin: float = 0.30):
-    df = score_dataframe(df_full.copy())
-
-    dec = df[["customer_id", "uplift", "cltv"]].copy()
-    dec["cost"] = cost
-
-    _, summary = roi_select(
-        dec,
-        budget=budget,
-        margin=margin,
-        min_profit_threshold=0.0
-    )
-
-    return {"summary": summary}
+def simulate(budget: float = 5000.0, margin: float = 0.30):
+    req = RecommendRequest(budget=budget, margin=margin)
+    return recommend(req)
