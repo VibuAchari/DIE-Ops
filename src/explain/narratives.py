@@ -22,7 +22,7 @@ from typing import Dict, List
 # ------------------------------------------------------------
 def explain_customer(row: Dict) -> Dict:
     """
-    Generate a human-readable explanation for ONE customer decision.
+    Generate a business-readable explanation for ONE customer decision.
 
     Expected input fields:
     - customer_id
@@ -46,35 +46,35 @@ def explain_customer(row: Dict) -> Dict:
     # --------------------------------------------------------
     if churn >= 0.70:
         reasons.append(
-            "Very high churn risk: this customer is likely to leave soon without intervention."
+            "Customer shows strong churn signals and is likely to disengage soon without intervention."
         )
     elif churn >= 0.40:
         reasons.append(
-            "Moderate churn risk: engagement is declining and retention action is justified."
+            "Customer engagement is weakening, making early retention action economically justified."
         )
     else:
         reasons.append(
-            "Lower churn risk: customer is still active, but proactive retention may help."
+            "Customer is still active, but proactive retention helps prevent gradual drop-off."
         )
 
     # --------------------------------------------------------
-    # 2. Uplift Narrative (Treatment Impact)
+    # 2. Treatment Impact Narrative (Uplift)
     # --------------------------------------------------------
     if uplift < 0:
         reasons.append(
-            "Negative uplift detected: retention treatment may backfire, so targeting is risky."
+            "Predicted response is negative: retention targeting is risky and may reduce engagement."
         )
     elif uplift >= 0.20:
         reasons.append(
-            "Strong uplift: retention action is expected to significantly reduce churn."
+            "Strong expected response: intervention is likely to significantly reduce churn probability."
         )
     elif uplift >= 0.05:
         reasons.append(
-            "Positive uplift: customer should respond well to retention treatment."
+            "Positive expected response: customer should benefit from targeted retention treatment."
         )
     else:
         reasons.append(
-            "Weak uplift: expected retention impact is limited."
+            "Limited expected response: retention impact is modest but still positive compared to inaction."
         )
 
     # --------------------------------------------------------
@@ -82,45 +82,30 @@ def explain_customer(row: Dict) -> Dict:
     # --------------------------------------------------------
     if cltv >= 50000:
         reasons.append(
-            "High-value customer: premium retention investment is economically worthwhile."
+            "High lifetime value customer: retention investment is financially important."
         )
     elif cltv >= 10000:
         reasons.append(
-            "Mid-value customer: retention spending is reasonable given expected returns."
+            "Mid-value customer: retention spend is reasonable if ROI remains positive."
         )
     else:
         reasons.append(
-            "Low-value customer: only low-cost interventions make business sense."
+            "Lower-value customer: only cost-efficient actions are economically viable."
         )
 
     # --------------------------------------------------------
-    # 4. Offer Justification (Action Assignment)
+    # 4. Policy-Based Offer Justification (Not Hardcoded)
     # --------------------------------------------------------
-    if offer == "EMAIL_NUDGE":
-        reasons.append(
-            "Selected EMAIL_NUDGE because it is a low-cost digital intervention with positive ROI."
-        )
-
-    elif offer == "COUPON_10":
-        reasons.append(
-            "Selected COUPON_10 because churn risk is high and a financial incentive improves retention."
-        )
-
-    elif offer == "VIP_CALL":
-        reasons.append(
-            "Selected VIP_CALL because the customer is highly valuable and human outreach is justified."
-        )
-
-    else:
-        reasons.append(
-            f"Recommended action: {offer} (best available profit-positive intervention)."
-        )
+    reasons.append(
+        f"Recommended action: {offer}, selected because it produced the highest expected profit "
+        "among available retention interventions for this customer."
+    )
 
     # --------------------------------------------------------
     # 5. ROI Outcome
     # --------------------------------------------------------
     reasons.append(
-        f"Expected net profit from this action: ₹{profit:,.0f}"
+        f"Expected net profit impact after intervention cost: ₹{profit:,.0f}"
     )
 
     return {
@@ -138,18 +123,19 @@ def explain_campaign(selected_customers: List[Dict]) -> Dict:
     Output:
     - Campaign-level bullets
     - Offer distribution
+    - Profitability framing
     """
 
     if not selected_customers:
         return {
             "campaign_summary": [
-                "No profitable retention actions were found under the given budget."
+                "No retention interventions were profitable under the given budget constraints."
             ]
         }
 
     total = len(selected_customers)
 
-    # Count actions
+    # Count actions + profit
     offer_counts = {}
     total_profit = 0.0
 
@@ -159,15 +145,14 @@ def explain_campaign(selected_customers: List[Dict]) -> Dict:
 
     # Executive bullets
     bullets = [
-        f"Campaign selected {total} customers with positive expected ROI.",
-        "Actions were assigned based on churn risk, expected uplift impact, and customer value.",
-        f"Expected total net profit: ₹{total_profit:,.0f}",
+        f"Campaign prioritized {total} customers with the strongest profit-positive churn risk.",
+        "Interventions were personalized using churn urgency, expected uplift, and customer lifetime value.",
+        f"Expected total incremental net profit: ₹{total_profit:,.0f}",
+        "Intervention mix deployed:"
     ]
 
     # Offer breakdown
-    bullets.append("Offer mix deployed:")
-
-    for offer, n in offer_counts.items():
+    for offer, n in sorted(offer_counts.items(), key=lambda x: -x[1]):
         bullets.append(f"- {offer}: {n} customers")
 
     return {"campaign_summary": bullets}
