@@ -1,4 +1,4 @@
-"""Application service for campaign recommendation."""
+"""Application service for campaign recommendation and customer decisions."""
 from dataclasses import dataclass
 import pandas as pd
 from src.decision_engine.actions import build_action_candidates
@@ -21,26 +21,32 @@ class CampaignService:
         self._scorer = scorer
         self._customer_data = customer_data
 
+    def score_customer(self, customer_id: int) -> dict:
+        df = self._customer_data[self._customer_data["customer_id"] == customer_id].copy()
+        if df.empty:
+            raise KeyError(customer_id)
+        row = self._scorer(df).iloc[0]
+        return {"customer_id": int(row["customer_id"]), "churn_prob": float(row["churn_prob"]), "uplift": float(row["uplift"]), "cltv_raw": float(row["cltv_raw"])}
+
+    def policy_options(self, customer_id: int, margin: float = 0.30) -> list[dict]:
+        margin_request = CampaignRequest(margin=margin)
+        margin_request.validate()
+        df = self._customer_data[self._customer_data["customer_id"] == customer_id].copy()
+        if df.empty:
+            raise KeyError(customer_id)
+        candidates = build_action_candidates(self._scorer(df), margin=margin)
+        return candidates.to_dict(orient="records")
+
     def recommend(self, request: CampaignRequest) -> dict:
         request.validate()
         scored = self._scorer(self._customer_data.copy())
         candidates = build_action_candidates(scored, margin=request.margin)
         if candidates.empty:
             return {"summary": {"selected_count": 0, "budget_used": 0.0, "expected_profit": 0.0, "avg_profit_per_customer": 0.0}, "selected_customers": []}
-
         best_idx = candidates.groupby("customer_id")["net_profit"].idxmax()
         candidates = candidates.loc[best_idx].reset_index(drop=True)
         selected_df, _ = roi_select(candidates, budget=request.budget, margin=request.margin)
-
         expected_profit = float(selected_df["net_profit"].sum())
         budget_used = float(selected_df["cost"].sum())
         selected_count = len(selected_df)
-        return {
-            "summary": {
-                "selected_count": selected_count,
-                "budget_used": budget_used,
-                "expected_profit": expected_profit,
-                "avg_profit_per_customer": expected_profit / selected_count if selected_count else 0.0,
-            },
-            "selected_customers": selected_df.to_dict(orient="records"),
-        }
+        return {"summary": {"selected_count": selected_count, "budget_used": budget_used, "expected_profit": expected_profit, "avg_profit_per_customer": expected_profit / selected_count if selected_count else 0.0}, "selected_customers": selected_df.to_dict(orient="records")}
