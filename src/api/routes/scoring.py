@@ -8,28 +8,17 @@ class CustomerRequest(BaseModel):
 
 @router.post("/score/customer")
 def score_customer(payload: CustomerRequest, request: Request):
-    service = request.app.state.campaigns
-    df = service._customer_data[service._customer_data["customer_id"] == payload.customer_id].copy()
-    if df.empty:
-        raise HTTPException(status_code=404, detail="Customer not found")
-    scored = service._scorer(df)
-    row = scored.iloc[0]
-    return {
-        "customer_id": int(row["customer_id"]),
-        "churn_prob": float(row["churn_prob"]),
-        "uplift": float(row["uplift"]),
-        "cltv_raw": float(row["cltv_raw"]),
-    }
+    try:
+        return request.app.state.campaigns.score_customer(payload.customer_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Customer not found") from exc
 
 @router.get("/policy/options/{customer_id}")
 def policy_options(customer_id: int, request: Request):
-    from src.decision_engine.actions import build_action_candidates
-    service = request.app.state.campaigns
-    df = service._customer_data[service._customer_data["customer_id"] == customer_id].copy()
-    if df.empty:
-        raise HTTPException(status_code=404, detail="Customer not found")
-    candidates = build_action_candidates(service._scorer(df), margin=0.30)
-    return {"customer_id": customer_id, "options": candidates.to_dict(orient="records")}
+    try:
+        return {"customer_id": customer_id, "options": request.app.state.campaigns.policy_options(customer_id)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Customer not found") from exc
 
 @router.get("/policy/decision/{customer_id}")
 def policy_decision(customer_id: int, request: Request):
