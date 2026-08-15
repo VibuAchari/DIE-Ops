@@ -1,12 +1,18 @@
 """FastAPI composition root for DIE-Ops."""
+
 import os
 from contextlib import asynccontextmanager
+
 import joblib
 import pandas as pd
 from fastapi import FastAPI
-from src.ingest.ingest import load_df
+
 from src.features.featurize import featurize_for_churn, featurize_for_uplift
+from src.ingest.ingest import load_df
 from src.services.campaigns import CampaignService
+from src.api.routes.campaigns import router as campaign_router
+from src.api.routes.reports import router as report_router
+from src.api.routes.scoring import router as scoring_router
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MODEL_DIR = os.path.join(ROOT, "models")
@@ -25,7 +31,11 @@ def build_scorer():
         p_t = uplift["model_t"].predict_proba(X_uplift)[:, 1]
         p_c = uplift["model_c"].predict_proba(X_uplift)[:, 1]
         df["uplift"] = p_c - p_t
-        df = df.merge(cltv_table[["customer_id", "cltv_raw"]], on="customer_id", how="left")
+        df = df.merge(
+            cltv_table[["customer_id", "cltv_raw"]],
+            on="customer_id",
+            how="left",
+        )
         if df["cltv_raw"].isna().any():
             raise RuntimeError("Missing CLTV values for scored customers")
         return df
@@ -41,10 +51,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="DIE-Ops Decision Intelligence API", lifespan=lifespan)
-
-from src.api.routes.campaigns import router as campaign_router
-from src.api.routes.reports import router as report_router
-from src.api.routes.scoring import router as scoring_router
 
 app.include_router(scoring_router)
 app.include_router(campaign_router)
